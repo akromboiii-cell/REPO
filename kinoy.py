@@ -1086,7 +1086,7 @@ async def user_message_handler(message: Message):
             caption_parts = []
             caption_parts.append(f"🎥 Nomi: {title or 'Film'}")
             caption_parts.append(f"📹 Sifati: {quality or '-'}")
-            caption_parts.append(f"🎞 Janr: {genre or '-'}")
+            caption_parts.append(f"🎞 Janr: #{genre or '-'}")
             caption_parts.append(f"🌐 Davlat: {country or '-'}")
             caption_parts.append(f"🇺🇿 Tarjima: {language or '-'}")
             caption_parts.append("")
