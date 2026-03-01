@@ -38,12 +38,12 @@ logging.getLogger("aiogram").setLevel(logging.ERROR)
 logging.getLogger("aiohttp").setLevel(logging.ERROR)
 
 # ----------------- KONFIG -----------------
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8522754363:AAFH-PpaLUciTXS8IfWj2_zjqIbSs20K9Tg")
 if not BOT_TOKEN:
     raise SystemExit("BOT_TOKEN kerak. Termuxda: export BOT_TOKEN=\"<token>\"")
 
 try:
-    ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+    ADMIN_ID = int(os.getenv("ADMIN_ID", "7794986117"))
 except Exception:
     ADMIN_ID = 0
     logger.warning("ADMIN_ID noto'g'ri yoki o'rnatilmagan.")
