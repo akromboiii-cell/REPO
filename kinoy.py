@@ -25,8 +25,8 @@ from aiogram.types import (
 from aiogram.client.default import DefaultBotProperties
 
 # --------------------- LOGGING ---------------------
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("kino_full_bot")
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger("kino_bot_full")
 
 # ----------------- KONFIG -----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8522754363:AAFH-PpaLUciTXS8IfWj2_zjqIbSs20K9Tg")
