@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # coding: utf-8
-# kino_serial_bot_full_part1.py
+# kinoy_full_with_nameless_and_pagination.py
 # Aiogram 3.22 ga mos. Termux-friendly.
-# PART 1 (PART 2 STARTS HERE yozuvi bilan davom etadi)
+# FULL file — sizning talablaringiz bo'yicha nameless-kino, pagination, va boshqalar qo'shildi.
 
 import os
 import re
@@ -20,16 +20,17 @@ from aiogram.filters import Command
 from aiogram.types import (
     Message, CallbackQuery, ChatJoinRequest,
     InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardMarkup, KeyboardButton
+    ReplyKeyboardMarkup, KeyboardButton, FSInputFile
 )
 from aiogram.client.default import DefaultBotProperties
 
 # --------------------- LOGGING ---------------------
+# Production uchun ERROR darajasini saqlaymiz — faqat xatolar ko'rinadi
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger("kino_bot_full")
 
 # ----------------- KONFIG -----------------
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8522754363:AAFH-PpaLUciTXS8IfWj2_zjqIbSs20K9Tg")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8632692244:AAH9rvvazfK9BYyzN9e3DXjRauXu03TGQOk")
 if not BOT_TOKEN:
     raise SystemExit("BOT_TOKEN kerak. Termuxda: export BOT_TOKEN=\"<token>\"")
 
@@ -77,6 +78,7 @@ def normalize_invite_for_compare(invite: Optional[str]) -> Optional[str]:
 async def init_db():
     """
     DB jadvallarini yaratadi va kerakli ustunlarni (quality) qo'shadi.
+    Yangi: settings.next_nameless_code default qo'shiladi (agar bo'lmasa).
     """
     async with aiosqlite.connect(DB_FILE) as db:
         # groups (majburiy kanallar)
@@ -159,7 +161,7 @@ async def init_db():
         """)
         await db.commit()
 
-        # migration: agar quality ustuni yo'q bo'lsa qo'shamiz
+        # migration: agar quality, country yoki downloads ustuni yo'q bo'lsa qo'shamiz
         try:
             cur = await db.execute("PRAGMA table_info(movies)")
             cols = await cur.fetchall()
@@ -175,6 +177,18 @@ async def init_db():
                 await db.commit()
         except Exception:
             logger.exception("Migration xatosi (davom etadi)")
+
+        # settings default: next_nameless_code, next_code, next_series_code
+        cur = await db.execute("SELECT value FROM settings WHERE key = 'next_nameless_code' LIMIT 1")
+        if not await cur.fetchone():
+            await db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('next_nameless_code', '1')")
+        cur2 = await db.execute("SELECT value FROM settings WHERE key = 'next_code' LIMIT 1")
+        if not await cur2.fetchone():
+            await db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('next_code', '100')")
+        cur3 = await db.execute("SELECT value FROM settings WHERE key = 'next_series_code' LIMIT 1")
+        if not await cur3.fetchone():
+            await db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('next_series_code', '1000')")
+        await db.commit()
 
 # ----------------- SETTINGS HELPERS -----------------
 async def settings_get(key: str) -> Optional[str]:
@@ -271,13 +285,14 @@ async def list_pending_for_user_db(user_id: int) -> List[Tuple[int, str, int, Op
         cur = await db.execute("SELECT id, chat_id, user_id, username, full_name FROM pending_join_requests WHERE user_id = ?", (int(user_id),))
         rows = await cur.fetchall()
         return [(r[0], r[1], r[2], r[3], r[4]) for r in rows]
-        #!/usr/bin/env python3
-# PART 2 (davomi)
 
 # ----------------- MOVIES HELPERS (quality qo'shildi) -----------------
-async def add_movie_db(code: str, title: str, file_id: str, file_type: str,
+async def add_movie_db(code: str, title: Optional[str], file_id: str, file_type: str,
                        year: Optional[str]=None, genre: Optional[str]=None, quality: Optional[str]=None,
                        language: Optional[str]=None, description: Optional[str]=None, country: Optional[str]=None):
+    """
+    title: Optional — agar None bo'lsa bu 'nomsiz' kino hisoblanadi.
+    """
     async with aiosqlite.connect(DB_FILE) as db:
         cur = await db.execute("SELECT downloads FROM movies WHERE code = ?", (code,))
         r = await cur.fetchone()
@@ -362,14 +377,16 @@ async def remove_series_db(series_code: str) -> bool:
 
 # ----------------- UI / KEYBOARDS -----------------
 def admin_main_kb() -> ReplyKeyboardMarkup:
+    # Admin keyboardga "Nomsiz kino" tugmasi qo'shildi
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Kino qo'shish 🎬"), KeyboardButton(text="Serial qo'shish 📺")],
-            [KeyboardButton(text="Guruh qo'shish ➕"), KeyboardButton(text="Guruh o'chirish ➖")],
-            [KeyboardButton(text="JoinRequest qo'shish"), KeyboardButton(text="JoinRequest o'chirish")],
-            [KeyboardButton(text="List Groups"), KeyboardButton(text="List Monitored")],
-            [KeyboardButton(text="Set Share Link"), KeyboardButton(text="Remove Share Link")],
-            [KeyboardButton(text="Foydalanuvchilar"), KeyboardButton(text="Cancel")]
+            [KeyboardButton(text="Kino qo'shish 🎬"), KeyboardButton(text="Nomsiz kino qo'shish 🎫")],
+            [KeyboardButton(text="Serial qo'shish 📺"), KeyboardButton(text="Guruh qo'shish ➕")],
+            [KeyboardButton(text="Guruh o'chirish ➖"), KeyboardButton(text="JoinRequest qo'shish")],
+            [KeyboardButton(text="JoinRequest o'chirish"), KeyboardButton(text="List Groups")],
+            [KeyboardButton(text="List Monitored"), KeyboardButton(text="Set Share Link")],
+            [KeyboardButton(text="Remove Share Link"), KeyboardButton(text="Foydalanuvchilar")],
+            [KeyboardButton(text="Remove Movie ➖"), KeyboardButton(text="Cancel")]
         ], resize_keyboard=True
     )
 
@@ -379,27 +396,66 @@ def admin_flow_kb() -> ReplyKeyboardMarkup:
 def collect_episodes_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Tugatish ✅"), KeyboardButton(text="Cancel")]], resize_keyboard=True)
 
-def build_episodes_inline_kb(series_code: str, episodes: List[Tuple[int,str,str,Optional[str],int]]) -> InlineKeyboardMarkup:
+# ----------------- EPISODES INLINE (PAGINATION) -----------------
+# Har sahifada nechta epizod ko'rsatiladi (tavsiya: 30)
+EPISODES_PER_PAGE = 30  # siz xohlasangiz 36 yoki 40 ga oʻzgartirish mumkin
+
+def build_episodes_inline_kb(series_code: str, episodes: List[Tuple[int,str,str,Optional[str],int]], page: int = 0, per_page: int = EPISODES_PER_PAGE) -> InlineKeyboardMarkup:
     """
-    Tugma matnlari: "1-qism", "2-qism", ... (callback play:series:ep)
+    Yangi pagination funksiyasi:
+    - Har qatorda 3 ta tugma
+    - Har sahifada `per_page` tugma (default 30)
+    - Callback play:<series_code>:<ep_num> ishlaydi
+    - Sahifa callback: page:<series_code>:<page_index>
     """
+    total = len(episodes)
+    if total == 0:
+        return InlineKeyboardMarkup(inline_keyboard=[])
+    pages = (total + per_page - 1) // per_page
+    if page < 0:
+        page = 0
+    if page >= pages:
+        page = pages - 1
+
+    start = page * per_page
+    end = min(start + per_page, total)
+    page_eps = episodes[start:end]
+
     rows: List[List[InlineKeyboardButton]] = []
+    # 3 columns per row
     current_row: List[InlineKeyboardButton] = []
-    for ep in episodes:
+    for ep in page_eps:
         ep_num = ep[0]
         btn = InlineKeyboardButton(text=f"{ep_num}-qism", callback_data=f"play:{series_code}:{ep_num}")
         current_row.append(btn)
-        if len(current_row) == 2:
+        if len(current_row) == 3:
             rows.append(current_row)
             current_row = []
     if current_row:
         rows.append(current_row)
+
+    # Navigation row
+    if pages > 1:
+        nav_row: List[InlineKeyboardButton] = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"page:{series_code}:{page-1}"))
+        # page indicator (non-action)
+        nav_row.append(InlineKeyboardButton(text=f"{page+1}/{pages}", callback_data=f"noop:{series_code}:{page}"))
+        if page < pages - 1:
+            nav_row.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"page:{series_code}:{page+1}"))
+        rows.append(nav_row)
+
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-async def build_movie_kb(code: str, title: str) -> InlineKeyboardMarkup:
+async def build_movie_kb(code: str, title: Optional[str]) -> InlineKeyboardMarkup:
+    """
+    movie inline keyboard:
+    - ulashish (url)
+    - yashirish (callback)
+    """
     codes_link = await settings_get("codes_link")
     rows: List[List[InlineKeyboardButton]] = []
-    share_text = f"Kod: {code} — {title}"
+    share_text = f"Kod: {code}" if not title else f"Kod: {code} — {title}"
     if codes_link:
         url = "https://t.me/share/url?url=&text=" + urllib.parse.quote_plus(share_text) + "&to=" + urllib.parse.quote_plus(codes_link)
     else:
@@ -507,6 +563,44 @@ async def cb_dummy(cq: CallbackQuery):
         await cq.answer("Iltimos havola yoki guruh admini bilan bog'laning.", show_alert=True)
     except Exception:
         pass
+
+# ---------- NEW: page callback handler for episode pagination ----------
+@dp.callback_query(lambda c: c.data and c.data.startswith("page:"))
+async def cb_episode_page(cq: CallbackQuery):
+    """
+    Handles pagination callback_data: page:<series_code>:<page_index>
+    Edits the inline keyboard of the message showing episode buttons.
+    """
+    data = cq.data
+    try:
+        _, series_code, page_str = data.split(":")
+        page = int(page_str)
+    except Exception:
+        try:
+            await cq.answer("Noto'g'ri sahifa.", show_alert=True)
+        except Exception:
+            pass
+        return
+
+    # Fetch episodes from DB
+    eps = await get_series_episodes(series_code)
+    if not eps:
+        try:
+            await cq.answer("Epizodlar topilmadi.", show_alert=True)
+        except Exception:
+            pass
+        return
+
+    kb = build_episodes_inline_kb(series_code, eps, page=page, per_page=EPISODES_PER_PAGE)
+    try:
+        await cq.message.edit_reply_markup(reply_markup=kb)
+        await cq.answer()
+    except Exception:
+        # fallback: send a small notice
+        try:
+            await cq.answer()
+        except Exception:
+            pass
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("play:"))
 async def callback_play_episode(callback: CallbackQuery):
@@ -750,15 +844,20 @@ async def admin_text_handler(message: Message):
                 await safe_send(ADMIN_ID, "Iltimos video yoki fayl yuboring.", reply_markup=admin_flow_kb())
                 return
             admin_states[ADMIN_ID] = {"action": "add_movie", "step": "wait_title_kino", "file_id": file_id, "file_type": ftype}
-            await safe_send(ADMIN_ID, "✅ Fayl qabul qilindi. Endi KINO NOMINI kiriting (majburiy):", reply_markup=admin_flow_kb())
+            await safe_send(ADMIN_ID, "✅ Fayl qabul qilindi. Endi KINO NOMINI kiriting (majburiy). Agar nom yo'q bo'lsa '-' yuboring:", reply_markup=admin_flow_kb())
             return
 
         if action == "add_movie" and step == "wait_title_kino":
             title = (message.text or "").strip()
-            if not title:
-                await safe_send(ADMIN_ID, "Nom majburiy. Iltimos kiriting:", reply_markup=admin_flow_kb())
+            if title == "":
+                await safe_send(ADMIN_ID, "Nom majburiy. Iltimos kiriting yoki '-' yuboring agar nomsiz bo'lsa:", reply_markup=admin_flow_kb())
                 return
             st = admin_states.get(ADMIN_ID, {})
+            # Agar admin '-' yuborsa, treat as regular movie but we requested using 'Nomsiz kino' button instead.
+            if title == "-":
+                await safe_send(ADMIN_ID, "Agar nomsiz kino qo'shmoqchi bo'lsangiz, iltimos 'Nomsiz kino qo'shish 🎫' tugmasini bosing.", reply_markup=admin_main_kb())
+                admin_states.pop(ADMIN_ID, None)
+                return
             st.update({"step": "wait_language_kino", "title": title})
             admin_states[ADMIN_ID] = st
             await safe_send(ADMIN_ID, "🌐 Endi KINO TILINI kiriting (majburiy):", reply_markup=admin_flow_kb())
@@ -822,15 +921,68 @@ async def admin_text_handler(message: Message):
                 return
             file_id = st.get("file_id"); ftype = st.get("file_type")
             title = st.get("title"); language = st.get("language"); genre = st.get("genre"); quality = st.get("quality"); country = st.get("country"); year = st.get("year")
+            # MOVIE kod: next_code
             nxt = await settings_get("next_code")
             try:
-                ni = int(nxt) if nxt else 1
+                ni = int(nxt) if nxt else 100
             except Exception:
-                ni = 1
+                ni = 100
             code = str(ni)
             await settings_set("next_code", str(ni + 1))
             await add_movie_db(code, title, file_id, ftype, year, genre, quality, language, description, country)
             await safe_send(ADMIN_ID, f"✅ Kino saqlandi! Kod: {code}", reply_markup=admin_main_kb())
+            return
+
+        # ======= NOMSIZ KINO qo'shish (media-first, title=None) =======
+        if action == "add_nameless" and step == "wait_media":
+            # Admin yuborgan media qabul qilinadi, title=None ga saqlanadi
+            file_id = None; ftype = None
+            if message.video:
+                file_id = message.video.file_id; ftype = "video"
+            elif message.document:
+                file_id = message.document.file_id; ftype = "document"
+            elif message.animation:
+                file_id = message.animation.file_id; ftype = "animation"
+            else:
+                await safe_send(ADMIN_ID, "Iltimos video yoki fayl yuboring.", reply_markup=admin_flow_kb())
+                return
+
+            # prepare to save as nomsiz: so'rovlarni kamaytiramiz, keyin quality va description optional so'ramaymiz
+            admin_states[ADMIN_ID] = {"action": "add_nameless", "step": "confirm_nameless_media", "file_id": file_id, "file_type": ftype}
+            await safe_send(ADMIN_ID, "✅ Nomsiz film fayli qabul qilindi. Tasdiqlash uchun 'Ha' yozing yoki Cancel.", reply_markup=admin_flow_kb())
+            return
+
+        if action == "add_nameless" and step == "confirm_nameless_media":
+            conf = text.strip().lower()
+            if conf not in ("ha", "ok", "yes", "y", "ha."):
+                admin_states.pop(ADMIN_ID, None)
+                await safe_send(ADMIN_ID, "Bekor qilindi.", reply_markup=admin_main_kb())
+                return
+            st = admin_states.pop(ADMIN_ID, None)
+            if not st:
+                await safe_send(ADMIN_ID, "Xatolik: holat topilmadi.", reply_markup=admin_main_kb())
+                return
+            file_id = st.get("file_id"); ftype = st.get("file_type")
+            # Get next_nameless_code
+            nxtn = await settings_get("next_nameless_code")
+            try:
+                nn = int(nxtn) if nxtn else 1
+            except Exception:
+                nn = 1
+            # Auto-switch logic: agar القديمة (existing count) juda katta bo'lsa, va nn < 5000, set to 5000
+            async with aiosqlite.connect(DB_FILE) as db:
+                cur = await db.execute("SELECT COUNT(*) FROM movies WHERE title IS NULL OR title = ''")
+                cnt_row = await cur.fetchone()
+                cnt_nameless = int(cnt_row[0]) if cnt_row and cnt_row[0] is not None else 0
+            # Agar oldin juda ko'p bo'lsa (threshold 3000), keyingi kodni >=5000 qilib qo'yish
+            if cnt_nameless >= 3000 and nn < 5000:
+                nn = 5000
+            code = str(nn)
+            # increment and save next_nameless_code
+            await settings_set("next_nameless_code", str(nn + 1))
+            # Save movie with title = None (nomsiz)
+            await add_movie_db(code, None, file_id, ftype, None, None, None, None, None, None)
+            await safe_send(ADMIN_ID, f"✅ Nomsiz kino saqlandi! Kod: {code} (title: NULL)", reply_markup=admin_main_kb())
             return
 
         # ======= SERIAL qo'shish (media-first: epizodlarni to'plash) =======
@@ -928,6 +1080,12 @@ async def admin_text_handler(message: Message):
         await safe_send(ADMIN_ID, "📤 Iltimos VIDEO yoki fayl yuboring (kino uchun):", reply_markup=admin_flow_kb())
         return
 
+    if text == "Nomsiz kino qo'shish 🎫":
+        # Nomsiz kino uchun faqat media kerak bo'ladi
+        admin_states[ADMIN_ID] = {"action": "add_nameless", "step": "wait_media"}
+        await safe_send(ADMIN_ID, "📤 Nomsiz kino qo'shish: Iltimos EPIZOD/FILM faylini yuboring. (Keyin tasdiq so'raladi)", reply_markup=admin_flow_kb())
+        return
+
     if text == "Serial qo'shish 📺":
         admin_states[ADMIN_ID] = {"action": "add_movie", "step": "collect_episodes", "episodes": []}
         await safe_send(ADMIN_ID, "📤 Serial qo'shish: Endi EPIZOD fayllarini yuboring. Hammasini yuborgach 'Tugatish ✅' ni bosing. (Keyin nom/til so'raladi)", reply_markup=collect_episodes_kb())
@@ -985,6 +1143,11 @@ async def admin_text_handler(message: Message):
         await safe_send(ADMIN_ID, f"Foydalanuvchilar soni: {total}\nBirinchi {len(users)} ID:\n" + ("\n".join(users) if users else "Hech narsa topilmadi."), reply_markup=admin_main_kb())
         return
 
+    if text == "Remove Movie ➖":
+        admin_states[ADMIN_ID] = {"action": "remove_movie", "step": "wait_code"}
+        await safe_send(ADMIN_ID, "O'chirish uchun kino/serial kodini yuboring (misol: 123 yoki 1000-1):", reply_markup=admin_flow_kb())
+        return
+
     await safe_send(ADMIN_ID, "🔧 Admin: menyudan buyruq tanlang.", reply_markup=admin_main_kb())
 
 # ----------------- PUBLIC (USER) HANDLERS -----------------
@@ -1010,7 +1173,7 @@ async def cmd_help(message: Message):
     txt = ("ℹ️ Yordam:\n"
            "/start — bosh sahifa va tekshiruv\n"
            "/help — yordam\n"
-           "Kodni yuboring: 123 yoki 1000-1 (serial epizod)\n")
+           "Kodni yuboring: 100 yoki 1000-1 (serial epizod)\n")
     await safe_send(message.from_user.id, txt)
 
 @dp.message(Command("settings"))
@@ -1083,16 +1246,21 @@ async def user_message_handler(message: Message):
                     return
                 await update_user_last_validated(message.from_user.id, datetime.datetime.now(datetime.timezone.utc))
             title, file_id, file_type, year, genre, quality, language, desc, country, downloads = mv
-            caption_parts = []
-            caption_parts.append(f"🎥 Nomi: {title or 'Film'}")
-            caption_parts.append(f"📹 Sifati: {quality or '-'}")
-            caption_parts.append(f"🎞 Janr: #{genre or '-'}")
-            caption_parts.append(f"🌐 Davlat: {country or '-'}")
-            caption_parts.append(f"🇺🇿 Tarjima: {language or '-'}")
-            caption_parts.append("")
-            caption_parts.append(f"Bizning sahifa👉 {REQUIRED_CHANNEL or (await settings_get('codes_link') or 'https://t.me/your_channel')}")
-            caption = "\n".join(caption_parts)
-            kb = await build_movie_kb(code, title or "Film")
+            # Agar title mavjud bo'lsa — an'anaviy caption, aks holda minimal (nomsiz kino)
+            if title and title != "":
+                caption_parts = []
+                caption_parts.append(f"🎥 Nomi: {title or 'Film'}")
+                caption_parts.append(f"📹 Sifati: {quality or '-'}")
+                caption_parts.append(f"🎞 Janr: #{genre or '-'}")
+                caption_parts.append(f"🌐 Davlat: {country or '-'}")
+                caption_parts.append(f"🇺🇿 Tarjima: {language or '-'}")
+                caption_parts.append("")
+                caption_parts.append(f"Bizning sahifa👉 {REQUIRED_CHANNEL or (await settings_get('codes_link') or 'https://t.me/your_channel')}")
+                caption = "\n".join(caption_parts)
+            else:
+                # Nomsiz kino uchun minimal caption: faqat Kod va sahifa
+                caption = f"Kod: {code}\n\nBizning sahifa👉 {REQUIRED_CHANNEL or (await settings_get('codes_link') or 'https://t.me/your_channel')}"
+            kb = await build_movie_kb(code, title)
             try:
                 if file_type == "video":
                     await bot.send_video(message.from_user.id, file_id, caption=caption, reply_markup=kb)
@@ -1138,23 +1306,26 @@ async def user_message_handler(message: Message):
         except Exception:
             logger.exception("Preview epizodni yuborishda xato")
 
-        # Inline tugmalar — "1-qism", "2-qism", ...
-        kb = build_episodes_inline_kb(code, eps)
+        # Inline tugmalar — paginated "1-qism", "2-qism", ...
+        kb = build_episodes_inline_kb(code, eps, page=0, per_page=EPISODES_PER_PAGE)
         try:
             await bot.send_message(message.from_user.id, "Epizodlardan birini tanlang:", reply_markup=kb)
         except Exception:
             await safe_send(message.from_user.id, "Epizodlar ro'yxati:", reply_markup=kb)
         return
 
-    await safe_send(message.from_user.id, "ℹ️ Iltimos kino yoki serial kodini yuboring (misol: 123 yoki 1000-1).")
+    await safe_send(message.from_user.id, "ℹ️ Iltimos kino yoki serial kodini yuboring (misol: 100 yoki 1000-1).")
 
 # ----------------- STARTUP / RUNNER -----------------
 async def main():
     await init_db()
+    # ensure default counters
     if not await settings_get("next_code"):
         await settings_set("next_code", "100")
     if not await settings_get("next_series_code"):
         await settings_set("next_series_code", "1000")
+    if not await settings_get("next_nameless_code"):
+        await settings_set("next_nameless_code", "1")
     asyncio.create_task(background_sub_check())
     logger.info("Bot ishga tushmoqda (VALIDATION_TTL=%s seconds)...", VALIDATION_TTL)
     try:
