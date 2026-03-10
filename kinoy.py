@@ -30,7 +30,7 @@ logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger("kino_bot_full")
 
 # ----------------- KONFIG -----------------
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8632692244:AAH9rvvazfK9BYyzN9e3DXjRauXu03TGQOk")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8522754363:AAFH-PpaLUciTXS8IfWj2_zjqIbSs20K9Tg")
 if not BOT_TOKEN:
     raise SystemExit("BOT_TOKEN kerak. Termuxda: export BOT_TOKEN=\"<token>\"")
 
