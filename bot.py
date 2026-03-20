@@ -59,7 +59,7 @@ TASHKENT_TZ = timezone(timedelta(hours=5))
 TARGETS = {
     "aslamboi": {
         "discussion_group": "Aslamboiiiiiiiiiiiii",
-        "comment_text": "🔥 Birinchi komment! ⏰ <real_time>",
+        "comment_text": ""Aslamboi qalaysansiz men addushi muhlisizman siz uc tashab bermaguningizcha postingizdagi kommentda hech bolmasa '5' top ichida bolib yozaman tahrir qilmayman pubg "id 51874772109" postni kutib otrganimni isboti soat hozir " <real_time> "addushi oldindan rahmat" ",
     },
     "sardorgang": {
         "discussion_group": "SardorGang_Chat",
