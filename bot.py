@@ -46,7 +46,7 @@ APP_PORT = int(os.getenv("PORT", "8080"))
 
 # Public URL bo'lsa shu yerga yozasiz:
 # Masalan: https://your-app.up.railway.app
-SELF_URL = os.getenv("SELF_URL", "").strip()
+SELF_URL = os.getenv("SELF_URL", "https://3d2078b2e408f870-198-163-193-128.serveousercontent.com").strip()
 
 # Har 5 daqiqada ping
 KEEP_ALIVE_INTERVAL = 300
